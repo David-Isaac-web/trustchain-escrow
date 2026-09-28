@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useMemo, Suspense, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import EscrowCard from '../../components/escrow/EscrowCard';
@@ -40,6 +40,20 @@ const ActivityTimeline = dynamic(() => import('../../components/dashboard/Activi
 });
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+const PINNED_ESCROWS_KEY = 'dashboard-pinned-escrows';
+const PINNED_ESCROW_DRAG_TYPE = 'application/dashboard-pinned-escrow-id';
+
+function readPinnedEscrowIds() {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const stored = window.localStorage.getItem(PINNED_ESCROWS_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 export default function DashboardPage() {
   const { t } = useI18n();
@@ -48,7 +62,16 @@ export default function DashboardPage() {
   const [escrows, setEscrows] = useState([]);
   const [escrowsLoading, setEscrowsLoading] = useState(true);
   const [reputation, setReputation] = useState(null);
+  const [pinnedEscrowIds, setPinnedEscrowIds] = useState(readPinnedEscrowIds);
+  const [pinnedMessage, setPinnedMessage] = useState('');
+  const draggedPinnedIdRef = useRef(null);
   const { measureAsync } = usePerformance('DashboardPage');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(PINNED_ESCROWS_KEY, JSON.stringify(pinnedEscrowIds));
+    }
+  }, [pinnedEscrowIds]);
 
   useEffect(() => {
     if (!address) router.replace('/');
@@ -77,11 +100,57 @@ export default function DashboardPage() {
       .catch(() => {});
   }, [address]);
 
-  if (!address) return null;
-
   const reputationScore = reputation?.totalScore
     ? Math.min(100, Math.round(Number(reputation.totalScore) / 100))
     : null;
+
+  const pinnedEscrows = useMemo(() => {
+    const pinnedIds = Array.isArray(pinnedEscrowIds) ? pinnedEscrowIds : [];
+    return pinnedIds
+      .map((escrowId) => escrows.find((escrow) => escrow.id === escrowId))
+      .filter(Boolean);
+  }, [escrows, pinnedEscrowIds]);
+
+  const activeEscrows = useMemo(() => {
+    const pinnedIds = new Set(Array.isArray(pinnedEscrowIds) ? pinnedEscrowIds : []);
+    return escrows.filter((escrow) => !pinnedIds.has(escrow.id));
+  }, [escrows, pinnedEscrowIds]);
+
+  const handlePinToggle = (escrowId) => {
+    const currentPinned = Array.isArray(pinnedEscrowIds) ? [...pinnedEscrowIds] : [];
+
+    if (currentPinned.includes(escrowId)) {
+      setPinnedEscrowIds(currentPinned.filter((id) => id !== escrowId));
+      setPinnedMessage('');
+      return;
+    }
+
+    if (currentPinned.length >= 5) {
+      setPinnedMessage('Max 5 pinned');
+      return;
+    }
+
+    setPinnedEscrowIds([...currentPinned, escrowId]);
+    setPinnedMessage('');
+  };
+
+  const handlePinnedEscrowReorder = (sourceId, targetId) => {
+    if (sourceId === targetId) return;
+
+    setPinnedEscrowIds((currentPinned) => {
+      const nextPinned = Array.isArray(currentPinned) ? [...currentPinned] : [];
+      const sourceIndex = nextPinned.indexOf(sourceId);
+      const targetIndex = nextPinned.indexOf(targetId);
+
+      if (sourceIndex === -1 || targetIndex === -1) return nextPinned;
+
+      const [movedEscrow] = nextPinned.splice(sourceIndex, 1);
+      nextPinned.splice(targetIndex, 0, movedEscrow);
+      return nextPinned;
+    });
+  };
+
+  if (!address) return null;
 
   return (
     <PageTransition>
@@ -128,6 +197,56 @@ export default function DashboardPage() {
             </Suspense>
           </section>
 
+          {pinnedMessage && (
+            <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+              {pinnedMessage}
+            </div>
+          )}
+
+          {pinnedEscrows.length > 0 && (
+            <section aria-label="Pinned escrows" role="region">
+              <h2 className="text-lg font-semibold text-white mb-4">Pinned Escrows</h2>
+              <div className="grid gap-4 md:grid-cols-2" role="list">
+                {pinnedEscrows.map((escrow) => (
+                  <div
+                    key={escrow.id}
+                    role="listitem"
+                    draggable
+                    data-testid={`pinned-escrow-${escrow.id}`}
+                    onDragStart={(event) => {
+                      const sourceId = Number(escrow.id);
+                      draggedPinnedIdRef.current = sourceId;
+                      event.dataTransfer.effectAllowed = 'move';
+                      event.dataTransfer.setData(PINNED_ESCROW_DRAG_TYPE, String(sourceId));
+                      event.dataTransfer.setData('text/plain', String(sourceId));
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const sourceId =
+                        Number(event.dataTransfer.getData(PINNED_ESCROW_DRAG_TYPE)) ||
+                        Number(event.dataTransfer.getData('text/plain')) ||
+                        draggedPinnedIdRef.current;
+
+                      if (sourceId) {
+                        handlePinnedEscrowReorder(Number(sourceId), Number(escrow.id));
+                      }
+                      draggedPinnedIdRef.current = null;
+                    }}
+                  >
+                    <EscrowCard
+                      escrow={escrow}
+                      isPinned
+                      onPinToggle={handlePinToggle}
+                    />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section aria-label="Active escrow agreements" data-tour="disputes">
             <h2 className="text-lg font-semibold text-white mb-4">Your Active Escrows</h2>
             {escrowsLoading ? (
@@ -136,15 +255,15 @@ export default function DashboardPage() {
                 <CardSkeleton />
                 <CardSkeleton />
               </div>
-            ) : escrows.length === 0 ? (
+            ) : activeEscrows.length === 0 ? (
               <div className="card text-center py-10">
                 <p className="text-gray-400 font-medium">No active escrows yet.</p>
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2" role="list">
-                {escrows.map((escrow) => (
+                {activeEscrows.map((escrow) => (
                   <div key={escrow.id} role="listitem">
-                    <EscrowCard escrow={escrow} />
+                    <EscrowCard escrow={escrow} isPinned={false} onPinToggle={handlePinToggle} />
                   </div>
                 ))}
               </div>

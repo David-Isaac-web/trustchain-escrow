@@ -18,7 +18,7 @@
  */
 
 import Link from 'next/link';
-import { AlertTriangle, Clock } from 'lucide-react';
+import { AlertTriangle, Clock, Star } from 'lucide-react';
 import Badge from '../ui/Badge';
 import CurrencyAmount from '../ui/CurrencyAmount';
 // CopyButton is a named export, not a default one — importing it as default
@@ -38,7 +38,12 @@ function getTimeRemaining(deadline) {
   return `${hours} hour${hours === 1 ? '' : 's'} left`;
 }
 
-export default function EscrowCard({ escrow, isLoading = false }) {
+export default function EscrowCard({
+  escrow,
+  isLoading = false,
+  isPinned = false,
+  onPinToggle = () => {},
+}) {
   const { t } = useI18n();
   if (isLoading) return <EscrowCardSkeleton />;
   const {
@@ -59,116 +64,137 @@ export default function EscrowCard({ escrow, isLoading = false }) {
   const remaining = getTimeRemaining(deadline);
 
   const handleKeyDown = (event) => {
-    // Activate on Enter or Space key
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      cardRef.current?.click();
+      event.currentTarget.click();
     }
   };
 
   const stopLinkNavigation = (event) => event.preventDefault();
 
+  const handlePinToggle = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onPinToggle(id);
+  };
+
   return (
-    <Link
-      href={`/escrow/${id}`}
-      ref={cardRef}
-      tabIndex={0}
-      onKeyDown={handleKeyDown}
-      className="card block hover:border-gray-300 dark:hover:border-gray-700 hover:-translate-y-0.5 hover:shadow-lg dark:hover:shadow-black/30 transition-all duration-200 group focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-950"
-      role="button"
-      aria-label={`View details for escrow: ${title}`}
-    >
-      {/* Disputed warning banner */}
-      {isDisputed && (
-        <div
-          role="alert"
-          className="flex items-center gap-1.5 mb-3 -mt-1 px-2.5 py-1.5 rounded-lg text-xs font-medium
-                     bg-red-100 text-red-700 border border-red-200
-                     dark:bg-red-900/20 dark:text-red-300 dark:border-red-900/40"
-        >
-          <AlertTriangle size={13} aria-hidden="true" />
-          Disputed — awaiting mediator review
-        </div>
-      )}
-
-      {/* Header Row */}
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex-1 min-w-0">
-          <h3 className="text-gray-900 dark:text-white font-semibold truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-            {title}
-          </h3>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {role === 'client' ? t('escrow.fields.freelancer') : t('escrow.fields.client')}
-            {': '}
-            <span className="font-mono">{counterparty}</span>
-          </p>
-        </div>
-        <Badge status={status} size="sm" />
-      </div>
-
-      {/* Amount — converted to user's selected currency */}
-      <CurrencyAmount amount={totalAmount} showUsdc size="md" className="mb-3" />
-
-      {/* Milestone Progress Bar */}
-      <div>
-        <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
-          <span>{t('escrow.fields.milestones')}</span>
-          <span>{milestoneProgress}</span>
-        </div>
-        <div
-          className="w-full h-2 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden shadow-inner"
-          role="progressbar"
-          aria-valuenow={progressPct}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={`Milestone progress: ${milestoneProgress}`}
-        >
+    <div className="card relative group transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-700 hover:-translate-y-0.5 hover:shadow-lg dark:hover:shadow-black/30">
+      <Link
+        href={`/escrow/${id}`}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-950"
+        role="button"
+        aria-label={`View details for escrow: ${title}`}
+      >
+        {/* Disputed warning banner */}
+        {isDisputed && (
           <div
-            className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-500 ease-out"
-            style={{ width: `${progressPct}%` }}
-          />
-        </div>
-      </div>
+            role="alert"
+            className="flex items-center gap-1.5 mb-3 -mt-1 px-2.5 py-1.5 rounded-lg text-xs font-medium
+                       bg-red-100 text-red-700 border border-red-200
+                       dark:bg-red-900/20 dark:text-red-300 dark:border-red-900/40"
+          >
+            <AlertTriangle size={13} aria-hidden="true" />
+            Disputed — awaiting mediator review
+          </div>
+        )}
 
-      {/* Time remaining */}
-      {remaining && (
-        <div className="flex items-center gap-1.5 mt-3 text-xs text-gray-500">
-          <Clock size={12} aria-hidden="true" />
-          <span>{remaining}</span>
+        {/* Header Row */}
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-gray-900 dark:text-white font-semibold truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+              {title}
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {role === 'client' ? t('escrow.fields.freelancer') : t('escrow.fields.client')}
+              {': '}
+              <span className="font-mono">{counterparty}</span>
+            </p>
+          </div>
+          <Badge status={status} size="sm" />
         </div>
-      )}
 
-      {/* Transaction Hash */}
-      {transactionHash && (
-        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-800">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-gray-500">TX:</span>
-            <span className="text-xs font-mono text-gray-500 dark:text-gray-400 truncate">
-              {transactionHash.slice(0, 16)}...
-            </span>
-            <div onClick={stopLinkNavigation}>
-              <CopyButton text={transactionHash} label="Copy" size="sm" />
-            </div>
+        {/* Amount — converted to user's selected currency */}
+        <CurrencyAmount amount={totalAmount} showUsdc size="md" className="mb-3" />
+
+        {/* Milestone Progress Bar */}
+        <div>
+          <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
+            <span>{t('escrow.fields.milestones')}</span>
+            <span>{milestoneProgress}</span>
+          </div>
+          <div
+            className="w-full h-2 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden shadow-inner"
+            role="progressbar"
+            aria-valuenow={progressPct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Milestone progress: ${milestoneProgress}`}
+          >
+            <div
+              className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${progressPct}%` }}
+            />
           </div>
         </div>
-      )}
 
-      {/* Footer */}
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200 dark:border-gray-800">
-        <span className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-600">
-          #{id}
-          <span onClick={stopLinkNavigation}>
-            <CopyButton text={String(id)} label="escrow ID" size="sm" />
+        {/* Time remaining */}
+        {remaining && (
+          <div className="flex items-center gap-1.5 mt-3 text-xs text-gray-500">
+            <Clock size={12} aria-hidden="true" />
+            <span>{remaining}</span>
+          </div>
+        )}
+
+        {/* Transaction Hash */}
+        {transactionHash && (
+          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-800">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-gray-500">TX:</span>
+              <span className="text-xs font-mono text-gray-500 dark:text-gray-400 truncate">
+                {transactionHash.slice(0, 16)}...
+              </span>
+              <div onClick={stopLinkNavigation}>
+                <CopyButton text={transactionHash} label="Copy" size="sm" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200 dark:border-gray-800">
+          <span className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-600">
+            #{id}
+            <span onClick={stopLinkNavigation}>
+              <CopyButton text={String(id)} label="escrow ID" size="sm" />
+            </span>
           </span>
-        </span>
-        <span
-          className={`text-xs font-medium ${
-            role === 'client' ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400'
-          }`}
-        >
-          You are {role === 'client' ? t('escrow.fields.client') : t('escrow.fields.freelancer')}
-        </span>
-      </div>
-    </article>
+          <span
+            className={`text-xs font-medium ${
+              role === 'client' ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400'
+            }`}
+          >
+            You are {role === 'client' ? t('escrow.fields.client') : t('escrow.fields.freelancer')}
+          </span>
+        </div>
+      </Link>
+
+      <button
+        type="button"
+        aria-label={isPinned ? 'Unpin escrow' : 'Pin escrow'}
+        aria-pressed={isPinned}
+        onClick={handlePinToggle}
+        className="absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-gray-500 shadow-sm transition hover:scale-105 hover:text-yellow-500 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-300"
+      >
+        <Star
+          size={16}
+          fill={isPinned ? 'currentColor' : 'none'}
+          className={isPinned ? 'text-yellow-500' : 'text-gray-400'}
+          aria-hidden="true"
+        />
+      </button>
+    </div>
   );
 }
